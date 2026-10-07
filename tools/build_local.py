@@ -152,18 +152,16 @@ def create_launcher_scripts(target_dir: Path):
     # 1. 启动图形界面UI.bat
     gui_bat = target_dir / "启动图形界面UI.bat"
     gui_bat_content = """@echo off
-chcp 65001 >nul
 title MAAACOL - GUI
 echo 正在启动 MAAACOL 图形界面...
 start "" "%~dp0MFAAvalonia.exe"
 """
-    with open(gui_bat, "w", encoding="utf-8") as f:
+    with open(gui_bat, "w", encoding="gbk", newline="\r\n") as f:
         f.write(gui_bat_content)
 
     # 2. 启动TDM脚本.bat
     tdm_bat = target_dir / "启动TDM脚本.bat"
     tdm_bat_content = """@echo off
-chcp 65001 >nul
 title MAAACOL - TDM Runner
 echo =======================================================
 echo          Ace Combat Online - TDM Automation Runner
@@ -191,7 +189,7 @@ python run_tdm.py --rounds %ROUNDS% --minutes %MINUTES%
 echo.
 pause
 """
-    with open(tdm_bat, "w", encoding="utf-8") as f:
+    with open(tdm_bat, "w", encoding="gbk", newline="\r\n") as f:
         f.write(tdm_bat_content)
 
 

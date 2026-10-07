@@ -1,26 +1,25 @@
 @echo off
-chcp 65001 >nul
 title Ace Combat Online - TDM Runner
 
 echo =======================================================
-echo          Ace Combat Online - TDM è‡ªåŠ¨åŒ–è¿è¡Œè„šæœ¬
+echo          Ace Combat Online - TDM ×Ô¶¯»¯ÔËÐÐ½Å±¾
 echo =======================================================
 echo.
-echo [æç¤º] è¯·ç¡®ä¿æ¸¸æˆè¿è¡Œåœ¨ 1280x720 çª—å£åˆ†è¾¨çŽ‡ä¸‹ã€‚
+echo [ÌáÊ¾] ÇëÈ·±£ÓÎÏ·ÔËÐÐÔÚ 1280x720 ´°¿Ú·Ö±æÂÊÏÂ¡£
 echo.
 
 set ROUNDS=10
 set MINUTES=60
 
-set /p USER_ROUNDS="ç›®æ ‡è¿è¡Œå±€æ•° [é»˜è®¤ 10, è¾“å…¥ 0 ä¸ºæ— é™åˆ¶]: "
+set /p USER_ROUNDS="Ä¿±êÔËÐÐ¾ÖÊý [Ä¬ÈÏ 10, ÊäÈë 0 ÎªÎÞÏÞÖÆ]: "
 if not "%USER_ROUNDS%"=="" set ROUNDS=%USER_ROUNDS%
 
-set /p USER_MINUTES="æœ€é•¿è¿è¡Œåˆ†é’Ÿæ•° [é»˜è®¤ 60, è¾“å…¥ 0 ä¸ºæ— é™åˆ¶]: "
+set /p USER_MINUTES="×î³¤ÔËÐÐ·ÖÖÓÊý [Ä¬ÈÏ 60, ÊäÈë 0 ÎªÎÞÏÞÖÆ]: "
 if not "%USER_MINUTES%"=="" set MINUTES=%USER_MINUTES%
 
 echo.
-echo æ­£åœ¨å¯åŠ¨: å±€æ•°=%ROUNDS%, æœ€é•¿=%MINUTES%åˆ†é’Ÿ...
-echo æŒ‰ Ctrl+C å¯éšæ—¶åœæ­¢ã€‚
+echo ÕýÔÚÆô¶¯: ¾ÖÊý=%ROUNDS%, ×î³¤=%MINUTES%·ÖÖÓ...
+echo °´ Ctrl+C ¿ÉËæÊ±Í£Ö¹¡£
 echo.
 
 python run_tdm.py --rounds %ROUNDS% --minutes %MINUTES%
