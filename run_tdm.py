@@ -69,6 +69,7 @@ class TdmAutomator:
 
         # 战局状态记忆
         self.in_battle = False
+        self.battle_start_time = 0
         self.last_battle_time = 0
         self.last_state_name = "Unknown"
 
@@ -116,11 +117,29 @@ class TdmAutomator:
         if not detail or not detail.nodes:
             return "Unknown"
 
+        # 若命中提示或错误弹窗 (选项 OK)，优先返回处理
+        for node in detail.nodes:
+            if node.name == "CheckDialogOk" and node.completed:
+                return "CheckDialogOk"
+
         # 取最后一个命中的有效节点
         for node in reversed(detail.nodes):
             if node.name != "StartTDM" and node.completed:
                 return node.name
         return "Unknown"
+
+    def is_in_lobby(self) -> bool:
+        """快速轻量检查当前画面是否已回到大厅 (仅检测单节点，耗时极低)"""
+        if not self.tasker:
+            return False
+        job = self.tasker.post_task("CheckLobby")
+        detail = job.wait().get()
+        if not detail or not detail.nodes:
+            return False
+        for node in detail.nodes:
+            if node.name == "CheckLobby" and node.completed:
+                return True
+        return False
 
     def run_loop(self):
         print("\n================ TDM 自动化对战已启动 ================")
@@ -138,25 +157,62 @@ class TdmAutomator:
                 # 统一识别当前画面状态
                 state = self.dispatch_state()
 
-                # 0. 处于游戏最外层主菜单 (Main Menu)
+                # 0. 处于提示或错误弹窗 (选项 OK)
+                if state == "CheckDialogOk":
+                    if self.last_state_name != "DialogOk":
+                        print("[State] 检测到提示/错误弹窗 (选项 OK)，确认并关闭 (按空格)...")
+                        self.last_state_name = "DialogOk"
+
+                    GameInputController.send_key("space", 0.1)
+                    time.sleep(1.0)
+                    continue
+
+                # 1. 处于游戏最外层主菜单 (Main Menu)
                 if state == "CheckMainMenu":
+                    if self.in_battle:
+                        battle_dur = (
+                            time.time() - self.battle_start_time
+                            if self.battle_start_time
+                            else 0
+                        )
+                        print(
+                            f"[State] ⚠ 检测到从战局异常掉回主菜单 (历时 {battle_dur:.0f}s)，正在自愈恢复..."
+                        )
+                        self.in_battle = False
+                        self.battle_start_time = 0
+                        self.last_battle_time = 0
+
                     if self.last_state_name != "MainMenu":
-                        print("[State] 处于主菜单，进入 ACE COMBAT ONLINE (按空格)...")
+                        print("[State] 处于主菜单，重新进入 ACE COMBAT ONLINE (按空格)...")
                         self.last_state_name = "MainMenu"
 
                     GameInputController.send_key("space", 0.1)
-                    time.sleep(2.0)
+                    time.sleep(2.5)
                     continue
 
-                # 1. 处于大厅界面 (Lobby)
+                # 2. 处于大厅界面 (Lobby)
                 if state == "CheckLobby":
                     # 若此前正在对局中，说明刚刚打完结算回到了大厅
                     if self.in_battle:
                         self.in_battle = False
-                        session_tracker.increment_round()
-                        print(
-                            f"\n[Result] ★ 本局已顺利完成并返回大厅！当前累计完成: {session_tracker.completed_rounds} 局"
+                        battle_dur = (
+                            time.time() - self.battle_start_time
+                            if self.battle_start_time
+                            else 0
                         )
+                        self.battle_start_time = 0
+
+                        # 判断是否为正常完成对局还是过短异常退出
+                        if battle_dur >= 45:
+                            session_tracker.increment_round()
+                            print(
+                                f"\n[Result] ★ 本局已顺利完成并返回大厅 (历时 {battle_dur:.0f}s)！当前累计完成: {session_tracker.completed_rounds} 局"
+                            )
+                        else:
+                            print(
+                                f"\n[Result] ⚠ 本局仅持续 {battle_dur:.0f}s 即返回大厅 (疑似异常中断)，不计入有效场次。"
+                            )
+
                         # 结算后检查一次是否该停止
                         if session_tracker.check_stop_condition():
                             print("[TdmAutomator] 已达到目标局数或时长，停止出击。")
@@ -164,7 +220,17 @@ class TdmAutomator:
                         time.sleep(2.0)
 
                     if self.last_state_name != "Lobby":
-                        print("[State] 处于游戏大厅，打开在线菜单 (按 Tab)...")
+                        if self.last_state_name in (
+                            "Matching",
+                            "RoomSelectSet",
+                            "ConfirmSlot",
+                            "DialogOk",
+                        ):
+                            print(
+                                f"[State] ⚠ 检测到从 [{self.last_state_name}] 异常掉回多人大厅，重新打开在线菜单并重新出击 (按 Tab)..."
+                            )
+                        else:
+                            print("[State] 处于游戏大厅，打开在线菜单 (按 Tab)...")
                         self.last_state_name = "Lobby"
 
                     GameInputController.send_key("tab", 0.1)
@@ -225,6 +291,7 @@ class TdmAutomator:
                     if not self.in_battle:
                         print("[State] 战斗开始！进入局内巡航与防挂机状态 (WASD 机动 + 固定间隔按空格)...")
                         self.in_battle = True
+                        self.battle_start_time = time.time()
                         self.last_state_name = "InBattle"
 
                     self.last_battle_time = time.time()
@@ -243,10 +310,19 @@ class TdmAutomator:
                 # 8. 未识别到上述特征 (战局结束、结算统计或转场黑屏)
                 if self.in_battle:
                     time_since_battle = time.time() - self.last_battle_time
-                    if time_since_battle > 2.5:
-                        print("[State] 战局已结束，正在跳过结算/战果动画 (连续按空格)...")
-                        GameInputController.send_key("space", 0.1)
-                        time.sleep(0.8)
+                    # 战局刚脱离战斗 HUD 即视为进入结算阶段 (快速响应)
+                    if time_since_battle > 0.8:
+                        if self.last_state_name != "SkippingResult":
+                            print("[State] 战局已结束，正在快速连按空格跳过多重结算动画...")
+                            self.last_state_name = "SkippingResult"
+
+                        # 结算界面通常包含战果、得分榜、经验/奖励等多层页面，需要连续按好几个空格
+                        # 采用高频连打机制，每次连续快速点按，并实时检测是否已提前返回大厅
+                        for _ in range(6):
+                            GameInputController.send_key("space", 0.05)
+                            time.sleep(0.08)
+                            if self.is_in_lobby():
+                                break
                         continue
 
                 # 默认轻度等待

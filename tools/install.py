@@ -3,14 +3,54 @@ from pathlib import Path
 import shutil
 import sys
 
+import json
+
+def strip_jsonc_comments(text: str) -> str:
+    result = []
+    i, n = 0, len(text)
+    in_string, escape = False, False
+    while i < n:
+        c = text[i]
+        if in_string:
+            result.append(c)
+            if escape: escape = False
+            elif c == "\\": escape = True
+            elif c == '"': in_string = False
+            i += 1
+            continue
+        if c == '"':
+            in_string = True
+            result.append(c)
+            i += 1
+            continue
+        if c == "/" and i + 1 < n:
+            next_c = text[i + 1]
+            if next_c == "/":
+                i += 2
+                while i < n and text[i] not in "\r\n": i += 1
+                continue
+            elif next_c == "*":
+                i += 2
+                while i + 1 < n and not (text[i] == "*" and text[i + 1] == "/"): i += 1
+                i += 2
+                continue
+        result.append(c)
+        i += 1
+    return "".join(result)
+
+class _JsoncFallback:
+    @staticmethod
+    def load(fp):
+        clean_text = strip_jsonc_comments(fp.read())
+        return json.loads(clean_text)
+    @staticmethod
+    def dump(obj, fp, **kwargs):
+        return json.dump(obj, fp, **kwargs)
+
 try:
     import jsonc
-except ModuleNotFoundError as e:
-    raise ImportError(
-        "Missing dependency 'json-with-comments' (imported as 'jsonc').\n"
-        f"Install it with:\n  {sys.executable} -m pip install json-with-comments\n"
-        "Or add it to your project's requirements."
-    ) from e
+except ModuleNotFoundError:
+    jsonc = _JsoncFallback
 
 from configure import configure_ocr_model
 
@@ -141,10 +181,18 @@ def install_agent():
     )
 
 
+def install_scripts():
+    for script_name in ["game_input.py", "run_tdm.py"]:
+        src = working_dir / script_name
+        if src.exists():
+            shutil.copy2(src, install_path)
+
+
 if __name__ == "__main__":
     install_deps()
     install_resource()
     install_chores()
     install_agent()
+    install_scripts()
 
     print(f"Install to {install_path} successfully.")

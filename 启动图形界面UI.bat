@@ -1,8 +1,9 @@
 @echo off
+chcp 65001 >nul
 title Ace Combat Online - MFAAvalonia GUI
 
 echo =======================================================
-echo          Launching MAAACOL Graphical Interface (GUI)
+echo          启动 MAAACOL 图形交互界面 (GUI)
 echo =======================================================
 echo.
 

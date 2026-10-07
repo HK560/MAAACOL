@@ -1,6 +1,7 @@
 {
     "StartTDM": {
         "next": [
+            "CheckDialogOk",
             "CheckConfirmSlot",
             "CheckRoomSelectSet",
             "CheckMainMenu",
@@ -11,6 +12,17 @@
             "CheckMatchingBottom",
             "CheckInBattle"
         ]
+    },
+    "CheckDialogOk": {
+        "recognition": "OCR",
+        "expected": [
+            "OK",
+            "Ok",
+            "确定",
+            "确认"
+        ],
+        "roi": [260, 180, 760, 420],
+        "timeout": 300
     },
     "CheckConfirmSlot": {
         "recognition": "OCR",
@@ -32,7 +44,9 @@
         "recognition": "OCR",
         "expected": [
             "MAIN MENU",
-            "ACE COMBAT ONLINE"
+            "ACE COMBAT ONLINE",
+            "主菜单",
+            "主选单"
         ],
         "roi": [40, 30, 350, 250],
         "timeout": 300
@@ -41,7 +55,9 @@
         "recognition": "OCR",
         "expected": [
             "在线菜单",
-            "互动"
+            "互动",
+            "ONLINE MENU",
+            "INTERACT"
         ],
         "roi": [40, 650, 300, 65],
         "timeout": 300

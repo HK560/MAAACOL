@@ -1,10 +1,18 @@
-# gui & local downloads
+# gui & local builds & downloads
 gui/
 MFA/
 install/
-assets/resource/tmp/
+dist/
+.cache/
+logs/
+debug/
+temp/
 tmp/
+assets/resource/tmp/
 *.zip
+*.tar.gz
+*.7z
+
 
 # docs
 docs/node_modules
