@@ -1,0 +1,88 @@
+{
+    "StartTDM": {
+        "next": [
+            "CheckConfirmSlot",
+            "CheckRoomSelectSet",
+            "CheckMainMenu",
+            "CheckLobby",
+            "CheckOnlineMenu",
+            "CheckMissionsMenu",
+            "CheckMatchingTop",
+            "CheckMatchingBottom",
+            "CheckInBattle"
+        ]
+    },
+    "CheckConfirmSlot": {
+        "recognition": "OCR",
+        "expected": [
+            "是否继续",
+            "即将使用此机体组合出击",
+            "YES"
+        ],
+        "roi": [350, 300, 580, 250],
+        "timeout": 300
+    },
+    "CheckRoomSelectSet": {
+        "recognition": "OCR",
+        "expected": "SELECT SET",
+        "roi": [40, 20, 300, 80],
+        "timeout": 300
+    },
+    "CheckMainMenu": {
+        "recognition": "OCR",
+        "expected": [
+            "MAIN MENU",
+            "ACE COMBAT ONLINE"
+        ],
+        "roi": [40, 30, 350, 250],
+        "timeout": 300
+    },
+    "CheckLobby": {
+        "recognition": "OCR",
+        "expected": [
+            "在线菜单",
+            "互动"
+        ],
+        "roi": [40, 650, 300, 65],
+        "timeout": 300
+    },
+    "CheckOnlineMenu": {
+        "recognition": "OCR",
+        "expected": [
+            "ONLINE MENU"
+        ],
+        "roi": [40, 30, 300, 60],
+        "timeout": 300
+    },
+    "CheckMissionsMenu": {
+        "recognition": "OCR",
+        "expected": [
+            "SORTIE",
+            "MISSIONS"
+        ],
+        "roi": [40, 30, 300, 150],
+        "timeout": 300
+    },
+    "CheckMatchingTop": {
+        "recognition": "OCR",
+        "expected": "等待匹配",
+        "roi": [400, 20, 480, 80],
+        "timeout": 300
+    },
+    "CheckMatchingBottom": {
+        "recognition": "OCR",
+        "expected": "取消匹配",
+        "roi": [40, 650, 250, 65],
+        "timeout": 300
+    },
+    "CheckInBattle": {
+        "recognition": "OCR",
+        "expected": [
+            "TIME",
+            "SCORE",
+            "ALPHA"
+        ],
+        "roi": [30, 40, 260, 160],
+        "timeout": 300
+    }
+}
