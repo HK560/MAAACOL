@@ -148,40 +148,44 @@ def detect_system() -> tuple[str, str]:
 
 
 def create_launcher_scripts(target_dir: Path):
-    """为打包目录创建友好的双击启动脚本"""
-    # 1. 启动图形界面UI.bat
-    gui_bat = target_dir / "启动图形界面UI.bat"
+    """为打包目录创建纯 ASCII 英文的双击启动脚本 (遵循项目规则，杜绝编码错误)"""
+    # 1. start_gui.bat
+    gui_bat = target_dir / "start_gui.bat"
     gui_bat_content = """@echo off
 title MAAACOL - GUI
-echo 正在启动 MAAACOL 图形界面...
+echo Starting MAAACOL Graphical Interface...
 start "" "%~dp0MFAAvalonia.exe"
 """
-    with open(gui_bat, "w", encoding="gbk", newline="\r\n") as f:
+    with open(gui_bat, "w", encoding="ascii", newline="\r\n") as f:
         f.write(gui_bat_content)
 
-    # 2. 启动TDM脚本.bat
-    tdm_bat = target_dir / "启动TDM脚本.bat"
+    # 兼容转发: 启动图形界面UI.bat
+    with open(target_dir / "启动图形界面UI.bat", "w", encoding="ascii", newline="\r\n") as f:
+        f.write('@echo off\r\ncall "%~dp0start_gui.bat" %*\r\n')
+
+    # 2. run_tdm.bat
+    tdm_bat = target_dir / "run_tdm.bat"
     tdm_bat_content = """@echo off
 title MAAACOL - TDM Runner
 echo =======================================================
 echo          Ace Combat Online - TDM Automation Runner
 echo =======================================================
 echo.
-echo [提示] 请确保游戏运行在 1280x720 分辨率下。
+echo [Tips] Please ensure the game is running in 1280x720 window mode.
 echo.
 
 set ROUNDS=10
 set MINUTES=60
 
-set /p USER_ROUNDS="运行局数 [默认 10, 输入 0 为无限制]: "
+set /p USER_ROUNDS="Target rounds [Default 10, 0 for unlimited]: "
 if not "%USER_ROUNDS%"=="" set ROUNDS=%USER_ROUNDS%
 
-set /p USER_MINUTES="运行最长分钟数 [默认 60, 输入 0 为无限制]: "
+set /p USER_MINUTES="Max minutes [Default 60, 0 for unlimited]: "
 if not "%USER_MINUTES%"=="" set MINUTES=%USER_MINUTES%
 
 echo.
-echo 启动中: 局数=%ROUNDS%, 最长=%MINUTES%分钟...
-echo 按 Ctrl+C 可随时停止。
+echo Starting: rounds=%ROUNDS%, max_minutes=%MINUTES%...
+echo Press Ctrl+C anytime to stop.
 echo.
 
 python run_tdm.py --rounds %ROUNDS% --minutes %MINUTES%
@@ -189,8 +193,12 @@ python run_tdm.py --rounds %ROUNDS% --minutes %MINUTES%
 echo.
 pause
 """
-    with open(tdm_bat, "w", encoding="gbk", newline="\r\n") as f:
+    with open(tdm_bat, "w", encoding="ascii", newline="\r\n") as f:
         f.write(tdm_bat_content)
+
+    # 兼容转发: 启动TDM脚本.bat
+    with open(target_dir / "启动TDM脚本.bat", "w", encoding="ascii", newline="\r\n") as f:
+        f.write('@echo off\r\ncall "%~dp0run_tdm.bat" %*\r\n')
 
 
 def zip_directory(source_dir: Path, output_zip_path: Path):
