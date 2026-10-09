@@ -152,26 +152,31 @@ def create_launcher_scripts(target_dir: Path):
     # 1. start_gui.bat
     gui_bat = target_dir / "start_gui.bat"
     gui_bat_content = """@echo off
-title MAAACOL - GUI
-echo Starting MAAACOL Graphical Interface...
+title MAAACOL - Graphical Interface (GUI)
+echo =======================================================
+echo          Starting MAAACOL Graphical Interface (GUI)
+echo =======================================================
+echo.
+echo [INFO] Launching MFAAvalonia.exe...
 start "" "%~dp0MFAAvalonia.exe"
 """
     with open(gui_bat, "w", encoding="ascii", newline="\r\n") as f:
         f.write(gui_bat_content)
 
-    # 兼容转发: 启动图形界面UI.bat
-    with open(target_dir / "启动图形界面UI.bat", "w", encoding="ascii", newline="\r\n") as f:
-        f.write('@echo off\r\ncall "%~dp0start_gui.bat" %*\r\n')
-
     # 2. run_tdm.bat
     tdm_bat = target_dir / "run_tdm.bat"
     tdm_bat_content = """@echo off
-title MAAACOL - TDM Runner
+title MAAACOL - Multiplayer Battle Runner
 echo =======================================================
-echo          Ace Combat Online - TDM Automation Runner
+echo        Ace Combat Online - Multiplayer Battle Runner
 echo =======================================================
 echo.
-echo [Tips] Please ensure the game is running in 1280x720 window mode.
+echo [Pre-requisite Instructions]
+echo 1. Manually enter Multiplayer mode in game.
+echo 2. Choose your desired game mode (any mode supported).
+echo 3. Return to Multiplayer Lobby (where your character can freely move).
+echo 4. Configure rounds and max duration below to start.
+echo [Recommendation] Strongly recommend setting game to Windowed 1280x720 resolution.
 echo.
 
 set ROUNDS=10
@@ -195,10 +200,6 @@ pause
 """
     with open(tdm_bat, "w", encoding="ascii", newline="\r\n") as f:
         f.write(tdm_bat_content)
-
-    # 兼容转发: 启动TDM脚本.bat
-    with open(target_dir / "启动TDM脚本.bat", "w", encoding="ascii", newline="\r\n") as f:
-        f.write('@echo off\r\ncall "%~dp0run_tdm.bat" %*\r\n')
 
 
 def zip_directory(source_dir: Path, output_zip_path: Path):
@@ -263,6 +264,13 @@ def copy_project_assets_and_scripts(target_dir: Path, version: str):
     # 6. 生成启动脚本
     create_launcher_scripts(target_dir)
 
+    # 7. 清理任何遗留/非标准批处理脚本或多余散落文件
+    for bf in target_dir.glob("*.bat"):
+        if bf.name not in ["start_gui.bat", "run_tdm.bat"]:
+            bf.unlink(missing_ok=True)
+    for py_name in ["main.py", "my_action.py", "my_reco.py"]:
+        (target_dir / py_name).unlink(missing_ok=True)
+
 
 def build_fast_local(version: str, os_name: str, arch: str, make_zip: bool = True) -> Path:
     """基于本地已有 gui/ 目录进行极速增量打包"""
@@ -326,6 +334,32 @@ def sync_to_gui(version: str):
             folder.mkdir(exist_ok=True)
 
     log_info("最新资源和脚本已同步至 gui/ 目录，可直接运行测试！")
+
+
+def setup_gui_env(version: str, os_name: str, arch: str, proxy: str = ""):
+    """初始化准备本地开发调试所用的 gui/ 运行目录"""
+    log_step("配置本地开发 GUI 目录 (gui/)")
+    GUI_DIR.mkdir(exist_ok=True)
+
+    # 若缺少核心依赖或 MFAAvalonia 前端，自动执行干净组装
+    if not (ROOT_DIR / "deps" / "bin").exists() or not (ROOT_DIR / "MFA" / "MFAAvalonia.exe").exists():
+        log_info("未检测到本地运行时组件，开始自动下载与干净组装...")
+        build_clean(version, os_name, arch, proxy=proxy, make_zip=False)
+
+    install_dir = ROOT_DIR / "install"
+    if install_dir.exists():
+        log_info("正在将 install 运行时组件复制至 gui/ ...")
+        for item in install_dir.iterdir():
+            if item.name.endswith(".bat") and item.name not in ["start_gui.bat", "run_tdm.bat"]:
+                continue
+            dest = GUI_DIR / item.name
+            if item.is_dir():
+                shutil.copytree(item, dest, dirs_exist_ok=True)
+            else:
+                shutil.copy2(item, dest)
+
+    sync_to_gui(version)
+    log_info("本地 gui/ 目录配置完成，可在项目根目录双击 start_gui.bat 启动！")
 
 
 def download_github_release(repo: str, keyword: str, dest_dir: Path, proxy: str = "") -> Path:
@@ -443,8 +477,12 @@ def build_clean(version: str, os_name: str, arch: str, proxy: str = "", make_zip
 
 def main():
     parser = argparse.ArgumentParser(description="MAAACOL 本地打包构建工具")
-    parser.add_argument("--mode", choices=["local", "clean", "sync-gui"], default="local",
-                        help="构建模式: local (本地极速打包), clean (干净全量打包), sync-gui (同步到开发gui目录)")
+    parser.add_argument(
+        "--mode",
+        choices=["local", "clean", "sync-gui", "setup-gui"],
+        default="local",
+        help="构建模式: local (本地极速打包), clean (干净全量打包), sync-gui (同步到开发gui目录), setup-gui (配置本地gui运行环境)",
+    )
     parser.add_argument("--version", default="", help="打包版本号 (默认自动读取 interface.json)")
     parser.add_argument("--os", default="", help="目标系统: win, macos, linux, android")
     parser.add_argument("--arch", default="", help="架构: x86_64, aarch64")
@@ -467,6 +505,10 @@ def main():
     try:
         if args.mode == "sync-gui":
             sync_to_gui(version)
+            return
+
+        if args.mode == "setup-gui":
+            setup_gui_env(version, os_name, arch, proxy=args.proxy)
             return
 
         if args.mode == "local":

@@ -1,4 +1,12 @@
 {
+    "StartTDMRunner": {
+        "action": "Custom",
+        "custom_action": "start_tdm_runner",
+        "custom_action_param": {
+            "max_rounds": 10,
+            "max_minutes": 60
+        }
+    },
     "StartTDM": {
         "next": [
             "CheckDialogOk",

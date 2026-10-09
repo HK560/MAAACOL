@@ -1,6 +1,6 @@
 """
-Ace Combat Online - TDM 自动化游玩脚本
-基于 MaaFramework 架构设计 (Dispatcher 调度器模式)
+Ace Combat Online - 多人联机自动化对战挂机脚本与核心引擎
+支持 CLI 命令行独立运行与 MFAAvalonia GUI 插件化运行双模式（不限对战模式）
 """
 
 import argparse
@@ -9,6 +9,7 @@ import os
 import random
 import sys
 import time
+from typing import Optional
 
 from maa.controller import Win32Controller
 from maa.define import MaaWin32InputMethodEnum, MaaWin32ScreencapMethodEnum
@@ -17,7 +18,10 @@ from maa.tasker import Tasker
 from maa.toolkit import Toolkit
 
 # 引入独立输入控制器与会话跟踪器
-from game_input import GameInputController, session_tracker
+try:
+    from game_input import GameInputController, session_tracker
+except ImportError:
+    from .game_input import GameInputController, session_tracker
 
 # Win32 辅助
 user32 = ctypes.windll.user32
@@ -31,7 +35,7 @@ def ensure_desktop():
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Ace Combat Online TDM Runner")
+    parser = argparse.ArgumentParser(description="Ace Combat Online Multiplayer Battle Runner")
     parser.add_argument(
         "--rounds",
         type=int,
@@ -57,14 +61,24 @@ def parse_args():
 
 
 class TdmAutomator:
-    def __init__(self, max_rounds: int = 10, max_minutes: int = 60, debug: bool = False):
+    """TDM 自动化核心调度器 (支持 CLI 与 GUI 共享调用)"""
+
+    def __init__(
+        self,
+        max_rounds: int = 10,
+        max_minutes: int = 60,
+        debug: bool = False,
+        context=None,
+        tasker: Optional[Tasker] = None,
+    ):
         self.max_rounds = max_rounds
         self.max_minutes = max_minutes
         self.debug = debug
+        self.context = context
+        self.tasker = tasker
 
         self.res = None
         self.ctrl = None
-        self.tasker = None
         self.hwnd = None
 
         # 战局状态记忆
@@ -73,7 +87,8 @@ class TdmAutomator:
         self.last_battle_time = 0
         self.last_state_name = "Unknown"
 
-    def setup(self) -> bool:
+    def setup_standalone(self) -> bool:
+        """独立运行环境初始化 (CLI 模式)"""
         ensure_desktop()
 
         print("[Init] 正在初始化 MaaFramework Toolkit...")
@@ -110,10 +125,46 @@ class TdmAutomator:
         )
         return True
 
+    def is_stopping(self) -> bool:
+        """检测是否需要终止运行 (包括 GUI 停止按钮、局数上限、时间上限)"""
+        # 1. 检测 GUI Tasker 是否下发停止指令
+        if self.context and self.context.tasker:
+            if self.context.tasker.stopping or not self.context.tasker.running:
+                return True
+
+        if self.tasker and (self.tasker.stopping or not self.tasker.running):
+            return True
+
+        # 2. 检测会话统计是否达成上限
+        if session_tracker.check_stop_condition():
+            return True
+
+        return False
+
+    def sleep_interruptible(self, seconds: float) -> bool:
+        """可被停止信号打断的高响应休眠，返回 False 表示休眠期间被中断"""
+        step = 0.1
+        elapsed = 0.0
+        while elapsed < seconds:
+            if self.is_stopping():
+                return False
+            chunk = min(step, seconds - elapsed)
+            time.sleep(chunk)
+            elapsed += chunk
+        return not self.is_stopping()
+
+    def _run_task(self, task_name: str):
+        """统一封装 pipeline 任务调用 (兼容 Context 与 Tasker)"""
+        if self.context:
+            return self.context.run_task(task_name)
+        elif self.tasker:
+            job = self.tasker.post_task(task_name)
+            return job.wait().get()
+        return None
+
     def dispatch_state(self) -> str:
         """通过 StartTDM 统一调度识别当前画面所处状态"""
-        job = self.tasker.post_task("StartTDM")
-        detail = job.wait().get()
+        detail = self._run_task("StartTDM")
         if not detail or not detail.nodes:
             return "Unknown"
 
@@ -130,10 +181,7 @@ class TdmAutomator:
 
     def is_in_lobby(self) -> bool:
         """快速轻量检查当前画面是否已回到大厅 (仅检测单节点，耗时极低)"""
-        if not self.tasker:
-            return False
-        job = self.tasker.post_task("CheckLobby")
-        detail = job.wait().get()
+        detail = self._run_task("CheckLobby")
         if not detail or not detail.nodes:
             return False
         for node in detail.nodes:
@@ -141,17 +189,32 @@ class TdmAutomator:
                 return True
         return False
 
-    def run_loop(self):
-        print("\n================ TDM 自动化对战已启动 ================")
-        print("按 Ctrl + C 可随时安全终止运行。\n")
+    def run_loop(self) -> bool:
+        """主自动化循环"""
+        # 重置会话统计
+        session_tracker.reset(self.max_rounds, self.max_minutes)
+
+        rounds_str = f"{self.max_rounds} 局" if self.max_rounds > 0 else "不限场次"
+        minutes_str = f"{self.max_minutes} 分钟" if self.max_minutes > 0 else "不限时长"
+
+        print("\n================ 多人联机自动化对战已启动 ================")
+        print("【作者信息】HK560 (https://space.bilibili.com/7342356)")
+        print("【免责声明】本工具不对封禁封号等负责，仅测试过多个账号长时使用，请自行承担风险！")
+        print("【推荐设置】强烈推荐游戏画面设置为：窗口化 1280x720 分辨率！")
+        print("【使用提示】")
+        print(" 1. 请确认已手动进入多人模式，并自行选择好要挂机的对战模式（不限模式）！")
+        print(" 2. 请确认当前画面处于多人大厅（玩家机师角色可自由移动的大厅）！")
+        print(f" 3. 运行配置：目标场次 [{rounds_str}]，最长时长 [{minutes_str}]。")
+        print(" 4. 运行期间可随时在 GUI 点击【停止】或终端按 Ctrl+C 安全退出。")
+        print("============================================================\n")
 
         try:
             while True:
                 ensure_desktop()
 
                 # 检查是否满足停止条件
-                if session_tracker.check_stop_condition():
-                    print("\n[TdmAutomator] 设定条件已满足，任务顺利完成！")
+                if self.is_stopping():
+                    print("\n[TdmAutomator] 停止条件已满足或收到终止请求，安全结束挂机。")
                     break
 
                 # 统一识别当前画面状态
@@ -164,7 +227,8 @@ class TdmAutomator:
                         self.last_state_name = "DialogOk"
 
                     GameInputController.send_key("space", 0.1)
-                    time.sleep(1.0)
+                    if not self.sleep_interruptible(1.0):
+                        break
                     continue
 
                 # 1. 处于游戏最外层主菜单 (Main Menu)
@@ -187,7 +251,8 @@ class TdmAutomator:
                         self.last_state_name = "MainMenu"
 
                     GameInputController.send_key("space", 0.1)
-                    time.sleep(2.5)
+                    if not self.sleep_interruptible(2.5):
+                        break
                     continue
 
                 # 2. 处于大厅界面 (Lobby)
@@ -214,10 +279,11 @@ class TdmAutomator:
                             )
 
                         # 结算后检查一次是否该停止
-                        if session_tracker.check_stop_condition():
+                        if self.is_stopping():
                             print("[TdmAutomator] 已达到目标局数或时长，停止出击。")
                             break
-                        time.sleep(2.0)
+                        if not self.sleep_interruptible(2.0):
+                            break
 
                     if self.last_state_name != "Lobby":
                         if self.last_state_name in (
@@ -227,66 +293,72 @@ class TdmAutomator:
                             "DialogOk",
                         ):
                             print(
-                                f"[State] ⚠ 检测到从 [{self.last_state_name}] 异常掉回多人大厅，重新打开在线菜单并重新出击 (按 Tab)..."
+                                f"[State] ⚠ 检测到从 [{self.last_state_name}] 掉回多人大厅，重新呼出在线菜单出击 (按 Tab)..."
                             )
                         else:
                             print("[State] 处于游戏大厅，打开在线菜单 (按 Tab)...")
                         self.last_state_name = "Lobby"
 
                     GameInputController.send_key("tab", 0.1)
-                    time.sleep(1.0)
+                    if not self.sleep_interruptible(1.0):
+                        break
                     continue
 
-                # 2. 处于在线菜单 (OnlineMenu)
+                # 3. 处于在线菜单 (OnlineMenu)
                 if state == "CheckOnlineMenu":
                     if self.last_state_name != "OnlineMenu":
                         print("[State] 处于在线菜单，进入 MISSIONS (按空格)...")
                         self.last_state_name = "OnlineMenu"
 
                     GameInputController.send_key("space", 0.1)
-                    time.sleep(1.0)
+                    if not self.sleep_interruptible(1.0):
+                        break
                     continue
 
-                # 3. 处于任务出击菜单 (MissionsMenu)
+                # 4. 处于任务出击菜单 (MissionsMenu)
                 if state == "CheckMissionsMenu":
                     if self.last_state_name != "MissionsMenu":
                         print("[State] 处于任务菜单，确认出击 SORTIE (按空格)...")
                         self.last_state_name = "MissionsMenu"
 
                     GameInputController.send_key("space", 0.1)
-                    time.sleep(1.5)
+                    if not self.sleep_interruptible(1.5):
+                        break
                     continue
 
-                # 4. 处于等待匹配中 (Matching)
+                # 5. 处于等待匹配中 (Matching)
                 if state in ("CheckMatchingTop", "CheckMatchingBottom"):
                     if self.last_state_name != "Matching":
                         print("[State] 正在等待匹配中 (显示: 等待匹配 / 取消匹配)，静默等待分配房间...")
                         self.last_state_name = "Matching"
 
-                    time.sleep(1.5)
+                    if not self.sleep_interruptible(1.5):
+                        break
                     continue
 
-                # 5. 处于机体出击确认弹窗 (Confirm Slot / YES)
+                # 6. 处于机体出击确认弹窗 (Confirm Slot / YES)
                 if state == "CheckConfirmSlot":
                     if self.last_state_name != "ConfirmSlot":
                         print("[State] 弹出机体组合确认弹窗，确认出击 YES (按空格)...")
                         self.last_state_name = "ConfirmSlot"
 
                     GameInputController.send_key("space", 0.1)
-                    time.sleep(1.0)
+                    if not self.sleep_interruptible(1.0):
+                        break
                     continue
 
-                # 6. 处于出击准备房间 (| SELECT SET |)
+                # 7. 处于出击准备房间 (| SELECT SET |)
                 if state == "CheckRoomSelectSet":
                     if self.last_state_name != "RoomSelectSet":
                         print("[State] 进入出击准备房间，选择机体并保持确认 (固定间隔按空格)...")
                         self.last_state_name = "RoomSelectSet"
 
                     GameInputController.send_key("space", 0.1)
-                    time.sleep(1.2)
+                    if not self.sleep_interruptible(1.2):
+                        break
                     continue
 
-                # 7. 处于战局中 (InBattle)
+                # 8. 处于战局中 (InBattle)
                 if state == "CheckInBattle":
                     if not self.in_battle:
                         print("[State] 战斗开始！进入局内巡航与防挂机状态 (WASD 机动 + 固定间隔按空格)...")
@@ -301,24 +373,27 @@ class TdmAutomator:
                     key = random.choice(actions)
                     hold = random.uniform(0.1, 0.25)
                     GameInputController.send_key(key, hold)
-                    time.sleep(0.2)
+                    if not self.sleep_interruptible(0.2):
+                        break
                     # 同时固定间隔点按一次空格
                     GameInputController.send_key("space", 0.08)
-                    time.sleep(1.5)
+                    if not self.sleep_interruptible(1.5):
+                        break
                     continue
 
-                # 8. 未识别到上述特征 (战局结束、结算统计或转场黑屏)
+                # 9. 未识别到上述特征 (战局结束、结算统计或转场黑屏)
                 if self.in_battle:
                     time_since_battle = time.time() - self.last_battle_time
-                    # 战局刚脱离战斗 HUD 即视为进入结算阶段 (快速响应)
+                    # 战局脱离战斗 HUD 即视为进入结算阶段
                     if time_since_battle > 0.8:
                         if self.last_state_name != "SkippingResult":
-                            print("[State] 战局已结束，正在快速连按空格跳过多重结算动画...")
+                            print("[State] 战局已结束，正在快速跳过多重结算动画...")
                             self.last_state_name = "SkippingResult"
 
-                        # 结算界面通常包含战果、得分榜、经验/奖励等多层页面，需要连续按好几个空格
-                        # 采用高频连打机制，每次连续快速点按，并实时检测是否已提前返回大厅
+                        # 连续快速按空格跳过结算
                         for _ in range(6):
+                            if self.is_stopping():
+                                break
                             GameInputController.send_key("space", 0.05)
                             time.sleep(0.08)
                             if self.is_in_lobby():
@@ -326,10 +401,13 @@ class TdmAutomator:
                         continue
 
                 # 默认轻度等待
-                time.sleep(0.8)
+                if not self.sleep_interruptible(0.8):
+                    break
 
         except KeyboardInterrupt:
             print("\n[TdmAutomator] 收到中断信号，安全停止。")
+
+        return True
 
 
 def main():
@@ -339,7 +417,7 @@ def main():
         max_minutes=args.minutes,
         debug=args.debug,
     )
-    if automator.setup():
+    if automator.setup_standalone():
         automator.run_loop()
 
 
