@@ -57,6 +57,21 @@ from embedded_python import install_embedded_python, verify_agent_env
 from embed_runtime import install_embedded_dotnet, install_vc_runtime
 
 
+def _use_utf8_stdio():
+    """把标准输出/错误切到 UTF-8
+
+    Windows 的控制台与管道默认使用本地代码页（CI runner 为 cp1252），打印中文日志会抛
+    UnicodeEncodeError；该异常若发生在 except 分支里还会二次抛出，直接把打包流程打断。
+    errors="replace" 作为兜底，保证日志永远不因编码问题中断构建。
+    """
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+
+
+_use_utf8_stdio()
+
+
 working_dir = Path(__file__).parent.parent.resolve()
 install_path = working_dir / Path("install")
 version = len(sys.argv) > 1 and sys.argv[1] or "v0.0.1"

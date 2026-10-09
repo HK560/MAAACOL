@@ -1,6 +1,9 @@
 name: install
 
 env:
+  # Windows runner 的控制台/管道默认使用本地代码页（cp1252），工具脚本打印中文日志时会抛
+  # UnicodeEncodeError 直接中断构建，这里为所有 Python 步骤强制 UTF-8 输出
+  PYTHONIOENCODING: "utf-8"
   # 版本控制：
   # - MaaFramework 运行时版本取自 requirements.txt 中固定的 maafw 版本（见 Resolve MaaFramework version 步骤）。
   #   Agent 协议版本必须与 Python 绑定一致，否则发布包会出现 "Agent 启动失败"。
@@ -75,8 +78,11 @@ jobs:
     runs-on: ${{ matrix.os == 'win' && 'windows-latest' || 'ubuntu-latest' }}
     strategy:
       matrix:
-        os: [win, macos, linux, android]
-        arch: [aarch64, x86_64]
+        # 当前只发布 Windows x86_64 产物：便携 Python 与 .NET 运行时组装、Agent 自检仅在 win-x64
+        # 有完整支持，macos / linux / android 与 aarch64 暂不构建；
+        # 需要恢复多平台发布时把 os / arch 列表加回来即可，其余步骤中的平台判断无需改动
+        os: [win]
+        arch: [x86_64]
       fail-fast: false
 
     steps:
