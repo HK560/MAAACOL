@@ -92,6 +92,10 @@ class TdmAutomator:
         self.last_battle_time = 0
         self.last_state_name = "Unknown"
 
+        # 心跳日志：画面状态长时间不变时按固定间隔输出一次，便于确认脚本仍在推进
+        self.heartbeat_interval = 30.0
+        self.last_heartbeat_at = 0.0
+
     def setup_standalone(self) -> bool:
         """独立运行环境初始化 (CLI 模式)"""
         ensure_desktop()
@@ -158,6 +162,23 @@ class TdmAutomator:
             elapsed += chunk
         return not self.is_stopping()
 
+    def log_heartbeat(self, state: str):
+        """按固定间隔输出运行进度，避免长时间停留在同一画面时日志没有任何推进信息"""
+        now = time.time()
+        if now - self.last_heartbeat_at < self.heartbeat_interval:
+            return
+        self.last_heartbeat_at = now
+
+        elapsed_min = (now - session_tracker.start_time) / 60.0
+        rounds = (
+            f"{session_tracker.completed_rounds}/{self.max_rounds} 局"
+            if self.max_rounds > 0
+            else f"{session_tracker.completed_rounds} 局"
+        )
+        print(
+            f"[Heartbeat] 已运行 {elapsed_min:.1f} 分钟 | 画面状态={state} | 已完成 {rounds}"
+        )
+
     def _run_task(self, task_name: str):
         """统一封装 pipeline 任务调用 (兼容 Context 与 Tasker)"""
         if self.context:
@@ -213,6 +234,17 @@ class TdmAutomator:
         print(" 4. 运行期间可随时在 GUI 点击【停止】或终端按 Ctrl+C 安全退出。")
         print("============================================================\n")
 
+        # GUI 模式下窗口由 MFAAvalonia 托管，这里额外确认输入控制器能定位到游戏窗口：
+        # 找不到时按键会静默失效（日志有步骤但游戏毫无反应），提前暴露便于排查
+        hwnd = GameInputController.get_game_hwnd()
+        if hwnd:
+            print(f"[Init] 已定位游戏窗口: HWND={hwnd:#x}")
+        else:
+            print(
+                "[Init] ⚠ 未找到游戏窗口（UnrealWindow / ACE COMBAT 8 : WINGS OF THEVE），"
+                "按键无法生效，请先启动游戏并进入多人大厅"
+            )
+
         try:
             while True:
                 ensure_desktop()
@@ -224,6 +256,8 @@ class TdmAutomator:
 
                 # 统一识别当前画面状态
                 state = self.dispatch_state()
+                # 定期输出心跳，状态长时间不变时也能在 GUI 日志里看到运行进度
+                self.log_heartbeat(state)
 
                 # 0. 处于提示或错误弹窗 (选项 OK)
                 if state == "CheckDialogOk":
@@ -411,6 +445,12 @@ class TdmAutomator:
 
         except KeyboardInterrupt:
             print("\n[TdmAutomator] 收到中断信号，安全停止。")
+
+        elapsed_min = (time.time() - session_tracker.start_time) / 60.0
+        print(
+            f"[TdmAutomator] 本次任务结束：完成 {session_tracker.completed_rounds} 局，"
+            f"运行 {elapsed_min:.1f} 分钟。"
+        )
 
         return True
 
