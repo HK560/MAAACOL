@@ -384,9 +384,14 @@ def build_fast_local(version: str, os_name: str, arch: str, make_zip: bool = Tru
         "debug", "logs", "temp", "backup", "__pycache__",
         "agent", "resource", "interface.json", "game_input.py",
     ]
+    # MFAAvalonia 的 config/ 是上一次运行留下的实例、任务与界面状态快照（含旧任务键）。
+    # 直接带进包会让新环境加载到过期任务，表现为点击开始后任务队列瞬间"全部完成"、
+    # 自动化完全不执行。与 CI 发布包保持一致：本地包也不携带，交给 MFAAvalonia
+    # 首次启动时按 interface.json 重建默认实例。
+    not_shipped = ["config"]
 
     for item in GUI_DIR.iterdir():
-        if item.name in regenerated:
+        if item.name in regenerated or item.name in not_shipped:
             continue
         dest = target_dir / item.name
         if item.is_dir():
