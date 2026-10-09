@@ -11,8 +11,8 @@
 基于 **[MaaFramework](https://github.com/MaaXYZ/MaaFramework)** 图像识别框架与 **[MFAAvalonia](https://github.com/SweetSmellFox/MFAAvalonia)** 跨平台图形前端构建。
 
 [![Author](https://img.shields.io/badge/Author-HK560-blue)](https://space.bilibili.com/7342356)
-[![MaaFramework](https://img.shields.io/badge/MaaFramework-v5.14.2-blue)](https://github.com/MaaXYZ/MaaFramework)
-[![MFAAvalonia](https://img.shields.io/badge/GUI-MFAAvalonia-green)](https://github.com/SweetSmellFox/MFAAvalonia)
+[![MaaFramework](https://img.shields.io/badge/MaaFramework-v5.12.3-blue)](https://github.com/MaaXYZ/MaaFramework)
+[![MFAAvalonia](https://img.shields.io/badge/GUI-MFAAvalonia_v2.16.2-green)](https://github.com/SweetSmellFox/MFAAvalonia)
 [![License](https://img.shields.io/badge/License-MIT-orange.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey.svg)](#)
 
@@ -85,10 +85,24 @@
 双击项目根目录下的启动脚本：
 
 ```text
-start_gui.bat (或直接双击运行 MAAACOL.exe)
+start_gui.bat
 ```
 
-> **提示**：启动脚本会自动检索虚拟环境 Python，若首次运行未检测到 GUI 运行库，脚本会智能提示一键下载与组装。
+> **提示**：**发布包已内置便携 Python 与 .NET 运行时**——包内 `python/` 自带 `maafw` 依赖，`runtime/` 自带 .NET 运行时（由 `start_gui.bat` 通过 `DOTNET_ROOT` 启用），VC++ 运行库也随包附带，因此**无需在主机上安装 Python、.NET 运行时或 VC++ Redistributable，也无需配置环境变量**，解压后双击 `start_gui.bat` 即可运行。`start_gui.bat` 只在包内解释器缺失时回退本机 Python。
+> 注意：直接双击 `MAAACOL.exe` 时不会加载包内 `runtime/`（需主机已装 .NET 10 运行时），**请使用 `start_gui.bat` 启动**。
+> 若首次运行未检测到 GUI 运行库（MaaFramework / MFAAvalonia 组件），脚本会智能提示一键下载与组装。
+
+> [!IMPORTANT]
+> **【仅在“从源码运行”时才需要的 Python 环境】**
+> 打包脚本会把便携 Python 放进包内 `python/`，因此发布包不依赖本机 Python；但直接在源码目录 / `gui/` 调试目录运行 GUI、CLI 时，仍需自备 Python 3.10+ 与 `maafw`：
+> ```powershell
+> python -m pip install -r requirements.txt
+> ```
+> 若本机存在多个 Python 版本，推荐在项目根目录创建虚拟环境（解释器选择顺序：包内 `python/` → 项目 `.venv` → 本机 Python 安装目录 → `PATH`）：
+> ```powershell
+> python -m venv .venv
+> .venv\Scripts\python.exe -m pip install -r requirements.txt
+> ```
 
 ### 2. 界面配置与使用步骤
 
@@ -185,9 +199,13 @@ flowchart TD
 双击根目录 `build_local.bat` 即可呼出打包与维护菜单：
 
 - **[1] Fast Local Build**：极速本地增量打包（利用本地已有运行组件，耗时约 5 秒生成 zip 产物）；
-- **[2] Clean Full Build**：全新干净全量打包（自动从 GitHub Release 下载最新的 MaaFramework 与 MFAAvalonia 前端并自动化组装）；
+- **[2] Clean Full Build**：全新干净全量打包（按固定版本从 GitHub Release 下载 MaaFramework 与 MFAAvalonia 前端并自动化组装：MaaFramework 版本取自 `requirements.txt` 的 `maafw==x.y.z`，前端版本取自 `tools/build_local.py` 的 `MFAAVALONIA_VERSION`）；
 - **[3] Fast Sync to gui/**：一键同步最新的流水线资源 (`assets/resource`)、配置 (`interface.json`) 与代码至 `gui/` 调试目录；
 - **[4] Setup gui/ Environment**：全新一键配置本地开发所用的 `gui/` 运行环境。
+
+> **便携 Python**：打包与同步（模式 1 / 2 / 3 / 4）都会自动下载官方 embeddable Python 并把 `requirements.txt` 依赖安装进输出目录的 `python/` 子目录，使产物不依赖主机环境；缓存位于 `.cache/embedded-python/`，仅首次需要联网，`requirements.txt` 变更后会自动重建。
+>
+> **内嵌 .NET 运行时**：打包与同步时还会把官方 `dotnet-runtime`（win-x64）解压进输出目录的 `runtime/`，并把 VC++ 运行库复制到 MaaFramework 原生库目录。上游 MFAAvalonia 是框架依赖发布，缺运行时 GUI 会直接启动失败，因此这一步是产物独立运行的关键；缓存位于 `.cache/embedded-dotnet/`，仅首次需要联网。
 
 ---
 
@@ -203,6 +221,16 @@ flowchart TD
 
 ### Q3: 战局结束后会卡在结算页面吗？
 - 结算界面通常包含战斗评级、积分榜、经验加成等多页。调度器在战局结束进入结算阶段时会高频连发确认键，同时轻量检测大厅特征，一回到大厅立即停止连发并平稳进入下一轮循环。
+
+### Q4: GUI 提示 `Agent启动失败` / `Failed to LinkStart agentClient` 怎么办？
+- **原因**：GUI 会以 `python agent/main.py` 拉起 Python Agent 插件。若 `python` 指向的解释器未安装 `maafw`，Agent 进程会立刻以 `ModuleNotFoundError: No module named 'maa'` 退出，MFAAvalonia 重试 3 次后即报连接失败。
+- **原因二（更常见）**：GUI 原生运行时与包内 Python 绑定必须版本一致。`runtimes/win-x64/native/MaaFramework.dll` 与 `python/Lib/site-packages/maa/bin` 版本漂移时，Agent 会以 `Protocol version mismatch ... Please update AgentClient` 退出。二者版本号统一由 `requirements.txt` 的 `maafw==x.y.z` 决定（`tools/build_local.py` 的 `get_maafw_version()` 会据此下载同版本原生库），**请勿单独升级其中一侧**，升级请改 `requirements.txt` 后重新构建。MFAAvalonia 前端同样固定为 `v2.16.2`（`MFAA_VERSION`），升级前端前需先验证其 .NET 绑定与 5.12.3 原生库兼容。
+- **排查**：查看 GUI 日志 `logs/log-yyyymmdd.log`，其中 `src=Agent` 开头的行会直接打印 Agent 进程的真实报错。
+- **解决**：发布包不会出现该问题（包内 `python/` 已自带 `maafw`）；从源码运行时遇到，请按上文安装依赖，或用 `build_local.bat` 重新打包以生成内置便携 Python 的产物。
+
+### Q5: 双击 `start_gui.bat` 后 GUI 毫无反应 / 提示缺少 .NET 运行时？
+- **原因**：GUI 主程序是 .NET 程序，而上游 MFAAvalonia 发布包为框架依赖（不含 .NET 运行时）。`start_gui.bat` 会优先使用包内 `runtime/`；若 `runtime/` 缺失（只拷贝了部分文件，或直接双击 `MAAACOL.exe`）就会回退主机运行时，主机未安装 .NET 10 时进程会立即退出。
+- **解决**：使用完整解压的发布包并从 `start_gui.bat` 启动；确需直接运行 `MAAACOL.exe` 时，请先安装 [.NET 10 运行时](https://dotnet.microsoft.com/download/dotnet/10.0)。
 
 ---
 

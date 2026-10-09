@@ -13,6 +13,14 @@ echo 4. Configure rounds and max duration below to start.
 echo [Recommendation] Strongly recommend setting game to Windowed 1280x720 resolution.
 echo.
 
+:: Make a Python with the maafw binding available for the GUI Agent and CLI runner
+call "%~dp0tools\ensure_agent_env.bat" "%~dp0."
+if errorlevel 1 (
+    echo.
+    pause
+    exit /b 1
+)
+
 set ROUNDS=10
 set MINUTES=60
 
@@ -28,13 +36,7 @@ echo Press Ctrl+C anytime to stop.
 echo.
 
 set PYTHONUNBUFFERED=1
-if exist "%~dp0.venv\Scripts\python.exe" (
-    "%~dp0.venv\Scripts\python.exe" run_tdm.py --rounds %ROUNDS% --minutes %MINUTES%
-) else if exist "%~dp0..\.venv\Scripts\python.exe" (
-    "%~dp0..\.venv\Scripts\python.exe" run_tdm.py --rounds %ROUNDS% --minutes %MINUTES%
-) else (
-    python run_tdm.py --rounds %ROUNDS% --minutes %MINUTES%
-)
+python run_tdm.py --rounds %ROUNDS% --minutes %MINUTES%
 
 echo.
 pause

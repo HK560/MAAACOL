@@ -89,6 +89,25 @@ def load_jsonc_file(file_path: Path) -> dict:
 ROOT_DIR = Path(__file__).parent.parent.resolve()
 TOOLS_DIR = ROOT_DIR / "tools"
 ASSETS_DIR = ROOT_DIR / "assets"
+
+# MaaFramework 原生运行时版本：直接取自 requirements.txt 里固定的 maafw 版本。
+# Agent 协议版本随 MaaFramework 发布变化(如 v5.12.3=协议7 / v5.14.2=协议8)，
+# 原生运行时(AgentClient)与 Python 绑定(AgentServer)版本漂移会导致 Agent 握手失败。
+def get_maafw_version() -> str:
+    """读取 requirements.txt 中固定的 maafw 版本（必须是 == 精确固定）"""
+    for raw_line in (ROOT_DIR / "requirements.txt").read_text(encoding="utf-8").splitlines():
+        line = raw_line.split("#", 1)[0].strip()
+        if line.startswith("maafw=="):
+            return line.split("==", 1)[1].strip()
+    raise RuntimeError("requirements.txt 必须用 maafw==x.y.z 固定版本，否则运行时与 Python 绑定可能协议不匹配")
+
+
+MAAFW_VERSION = get_maafw_version()
+
+# MFAAvalonia 前端版本：与 .github/workflows/install.yml 的 MFAA_VERSION 保持同步。
+# GUI 的 .NET 绑定需与固定的 MaaFramework 原生库兼容，升级前端前必须重新验证 Agent 握手。
+MFAAVALONIA_VERSION = "v2.16.2"
+
 GUI_DIR = ROOT_DIR / "gui"
 DIST_DIR = ROOT_DIR / "dist"
 
@@ -151,12 +170,23 @@ def create_launcher_scripts(target_dir: Path):
     """为打包目录创建纯 ASCII 英文的双击启动脚本 (遵循项目规则，杜绝编码错误)"""
     # 1. start_gui.bat
     gui_bat = target_dir / "start_gui.bat"
-    gui_bat_content = """@echo off
+    gui_bat_content = r"""@echo off
 title MAAACOL - Graphical Interface (GUI)
 echo =======================================================
 echo          Starting MAAACOL Graphical Interface (GUI)
 echo =======================================================
 echo.
+call "%~dp0ensure_agent_env.bat" "%~dp0."
+if errorlevel 1 (
+    echo.
+    pause
+    exit /b 1
+)
+:: Prefer the .NET runtime shipped inside the package, so no host .NET install is required
+if exist "%~dp0runtime\shared" (
+    set "DOTNET_ROOT=%~dp0runtime"
+    set "DOTNET_ROOT_X64=%~dp0runtime"
+)
 echo [INFO] Launching MAAACOL.exe...
 if exist "%~dp0MAAACOL.exe" (
     start "" "%~dp0MAAACOL.exe"
@@ -182,6 +212,13 @@ echo 3. Return to Multiplayer Lobby (where your character can freely move).
 echo 4. Configure rounds and max duration below to start.
 echo [Recommendation] Strongly recommend setting game to Windowed 1280x720 resolution.
 echo.
+
+call "%~dp0ensure_agent_env.bat" "%~dp0."
+if errorlevel 1 (
+    echo.
+    pause
+    exit /b 1
+)
 
 set ROUNDS=10
 set MINUTES=60
@@ -241,10 +278,33 @@ def copy_project_assets_and_scripts(target_dir: Path, version: str):
         dirs_exist_ok=True,
     )
 
-    # 3. 复制并更新 interface.json
+    # 3. 复制并更新 interface.json（内含便携 Python 的组装，使 Agent 不依赖主机环境）
     target_interface = target_dir / "interface.json"
     interface_data = load_jsonc_file(ASSETS_DIR / "interface.json")
     interface_data["version"] = version.lstrip("v")
+
+    from embedded_python import install_embedded_python, verify_agent_env
+
+    standalone = install_embedded_python(
+        target_dir,
+        ROOT_DIR / ".cache" / "embedded-python",
+        ROOT_DIR / "requirements.txt",
+    )
+    if not standalone:
+        log_warn("便携 Python 组装失败，Agent 将回退使用主机 python")
+    else:
+        # 自检：包内解释器能导入 maa.agent，且原生运行时与绑定同源，否则 GUI 会报 Agent 启动失败
+        verify_agent_env(target_dir)
+
+    from embed_runtime import install_embedded_dotnet, install_vc_runtime
+
+    # .NET 运行时与 VC++ 运行库同样随包分发：上游 MFAAvalonia 是框架依赖发布，主机缺少运行时时 GUI 无法启动
+    if not install_embedded_dotnet(target_dir, ROOT_DIR / ".cache" / "embedded-dotnet"):
+        log_warn(".NET 运行时组装失败，GUI 将回退使用主机 .NET 运行时")
+    install_vc_runtime(target_dir)
+
+    if interface_data.get("agent"):
+        interface_data["agent"]["child_exec"] = "./python/python.exe" if standalone else "python"
     with open(target_interface, "w", encoding="utf-8") as f:
         json.dump(interface_data, f, ensure_ascii=False, indent=4)
 
@@ -260,13 +320,15 @@ def copy_project_assets_and_scripts(target_dir: Path, version: str):
     )
 
     # 5. 复制根目录关键脚本与文档
-    for file_name in ["game_input.py", "run_tdm.py", "README.md", "LICENSE"]:
+    # requirements.txt 随包分发，供 ensure_agent_env.bat 提示用户安装依赖
+    for file_name in ["game_input.py", "run_tdm.py", "requirements.txt", "README.md", "LICENSE"]:
         src_file = ROOT_DIR / file_name
         if src_file.exists():
             shutil.copy2(src_file, target_dir)
 
-    # 6. 生成启动脚本
+    # 6. 生成启动脚本与 Python 环境自检脚本（启动脚本会调用它选择带 maafw 的解释器）
     create_launcher_scripts(target_dir)
+    shutil.copy2(TOOLS_DIR / "ensure_agent_env.bat", target_dir)
 
     # 7. 将 GUI 主执行程序重命名为 MAAACOL.exe / MAAACOL
     mfa_win = target_dir / "MFAAvalonia.exe"
@@ -282,7 +344,7 @@ def copy_project_assets_and_scripts(target_dir: Path, version: str):
 
     # 8. 清理任何遗留/非标准批处理脚本或多余散落文件
     for bf in target_dir.glob("*.bat"):
-        if bf.name not in ["start_gui.bat", "run_tdm.bat"]:
+        if bf.name not in ["start_gui.bat", "run_tdm.bat", "ensure_agent_env.bat"]:
             bf.unlink(missing_ok=True)
     for py_name in ["main.py", "my_action.py", "my_reco.py"]:
         (target_dir / py_name).unlink(missing_ok=True)
@@ -314,12 +376,17 @@ def build_fast_local(version: str, os_name: str, arch: str, make_zip: bool = Tru
     ignore_patterns = shutil.ignore_patterns(
         "debug", "logs", "temp", "backup",
         "__pycache__", "*.pyc", "*.log",
-        "resource", "agent", "interface.json",  # 后面会使用最新版覆盖
-        "game_input.py"
     )
+    # 顶层这些条目稍后都会用最新版本重新生成，直接跳过。
+    # 注意：不能把它们写进 ignore_patterns —— 该模式按名字匹配任意层级，会把包内
+    # python/Lib/site-packages/maa/agent 一并删掉，导致 GUI 报 Agent 启动失败。
+    regenerated = [
+        "debug", "logs", "temp", "backup", "__pycache__",
+        "agent", "resource", "interface.json", "game_input.py",
+    ]
 
     for item in GUI_DIR.iterdir():
-        if item.name in ["debug", "logs", "temp", "backup", "__pycache__"]:
+        if item.name in regenerated:
             continue
         dest = target_dir / item.name
         if item.is_dir():
@@ -384,9 +451,13 @@ def setup_gui_env(version: str, os_name: str, arch: str, proxy: str = ""):
     log_info("本地 gui/ 目录配置完成，可在项目根目录双击 start_gui.bat 启动！")
 
 
-def download_github_release(repo: str, keyword: str, dest_dir: Path, proxy: str = "") -> Path:
-    """自动从 GitHub Releases 下载匹配的文件"""
-    api_url = f"https://api.github.com/repos/{repo}/releases/latest"
+def download_github_release(repo: str, keyword: str, dest_dir: Path, proxy: str = "", tag: str = "") -> Path:
+    """自动从 GitHub Releases 下载匹配的文件；传入 tag 时下载指定版本而非最新版"""
+    api_url = (
+        f"https://api.github.com/repos/{repo}/releases/tags/{tag}"
+        if tag
+        else f"https://api.github.com/repos/{repo}/releases/latest"
+    )
     log_info(f"正在查询 {repo} 最新版本...")
     headers = {"User-Agent": "MAAACOL-Builder"}
     req = urllib.request.Request(api_url, headers=headers)
@@ -447,26 +518,43 @@ def build_clean(version: str, os_name: str, arch: str, proxy: str = "", make_zip
         shutil.rmtree(install_dir, ignore_errors=True)
     install_dir.mkdir(exist_ok=True)
 
-    # 1. 检查或下载 MaaFramework
-    if not (deps_dir / "bin").exists():
-        log_info("正在准备 MaaFramework 运行时...")
-        maa_keyword = f"MAA-{os_name}-{arch}"
-        zip_file = download_github_release("MaaXYZ/MaaFramework", maa_keyword, cache_dir, proxy=proxy)
+    # 1. 检查或下载 MaaFramework（固定版本，且版本变化时强制重新下载）
+    maa_marker = deps_dir / ".maaacol-maaframework-version"
+    maa_marker_version = maa_marker.read_text(encoding="ascii").strip() if maa_marker.exists() else ""
+    if not (deps_dir / "bin").exists() or maa_marker_version != MAAFW_VERSION:
+        log_info(f"正在准备 MaaFramework 运行时 v{MAAFW_VERSION} ...")
+        maa_keyword = f"MAA-{os_name}-{arch}-v{MAAFW_VERSION}"
+        zip_file = download_github_release(
+            "MaaXYZ/MaaFramework", maa_keyword, cache_dir, proxy=proxy, tag=f"v{MAAFW_VERSION}"
+        )
         log_info(f"解压 MaaFramework 到 {deps_dir} ...")
+        # 先清空旧 bin，避免旧版本 DLL 残留导致 GUI 与 Agent 协议不一致
+        shutil.rmtree(deps_dir / "bin", ignore_errors=True)
         with zipfile.ZipFile(zip_file, "r") as zf:
             zf.extractall(deps_dir)
+        maa_marker.write_text(MAAFW_VERSION, encoding="ascii")
 
     # 2. 检查或下载 MFAAvalonia (桌面平台)
     if os_name != "android":
         mfa_plat = "win" if os_name == "win" else ("osx" if os_name == "macos" else "linux")
         mfa_arch = "x64" if arch == "x86_64" else "arm64"
         mfa_keyword = f"-{mfa_plat}-{mfa_arch}"
-        if not (mfa_dir / "MFAAvalonia.exe").exists() and not (mfa_dir / "MFAAvalonia.dll").exists():
-            log_info("正在准备 MFAAvalonia 前端...")
-            zip_file = download_github_release("SweetSmellFox/MFAAvalonia", mfa_keyword, cache_dir, proxy=proxy)
+        # 与 MaaFramework 一样固定版本并按标记强制刷新，避免前端与原生库版本漂移
+        # 标记放在 .cache 而非 MFA/，避免随包把标记文件复制进产物
+        mfa_marker = cache_dir / ".maaacol-mfa-version"
+        mfa_marker_version = mfa_marker.read_text(encoding="ascii").strip() if mfa_marker.exists() else ""
+        mfa_ready = (mfa_dir / "MFAAvalonia.exe").exists() or (mfa_dir / "MFAAvalonia.dll").exists()
+        if not mfa_ready or mfa_marker_version != MFAAVALONIA_VERSION:
+            log_info(f"正在准备 MFAAvalonia 前端 {MFAAVALONIA_VERSION} ...")
+            shutil.rmtree(mfa_dir, ignore_errors=True)
+            mfa_dir.mkdir(exist_ok=True)
+            zip_file = download_github_release(
+                "SweetSmellFox/MFAAvalonia", mfa_keyword, cache_dir, proxy=proxy, tag=MFAAVALONIA_VERSION
+            )
             log_info(f"解压 MFAAvalonia 到 {mfa_dir} ...")
             with zipfile.ZipFile(zip_file, "r") as zf:
                 zf.extractall(mfa_dir)
+            mfa_marker.write_text(MFAAVALONIA_VERSION, encoding="ascii")
 
         # 清除自带运行时
         if (mfa_dir / "runtimes").exists():

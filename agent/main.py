@@ -6,6 +6,11 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
+# 便携版 Python(embeddable) 自带 ._pth 会跳过脚本目录，需显式补上以保证 my_action / my_reco 可导入
+AGENT_DIR = os.path.dirname(os.path.abspath(__file__))
+if AGENT_DIR not in sys.path:
+    sys.path.insert(0, AGENT_DIR)
+
 from maa.agent.agent_server import AgentServer
 from maa.toolkit import Toolkit
 

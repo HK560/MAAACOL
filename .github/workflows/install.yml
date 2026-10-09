@@ -2,10 +2,11 @@ name: install
 
 env:
   # 版本控制：
-  # - 设置 VERSION 为空字符串时，下载 latest 版本
-  # - 设置 VERSION 为具体版本号时（如 v1.2.3），下载指定版本
-  MAAFW_VERSION: ""
-  MFAA_VERSION: ""
+  # - MaaFramework 运行时版本取自 requirements.txt 中固定的 maafw 版本（见 Resolve MaaFramework version 步骤）。
+  #   Agent 协议版本必须与 Python 绑定一致，否则发布包会出现 "Agent 启动失败"。
+  # - MFAAvalonia 前端固定在 MFAA_VERSION（与 tools/build_local.py 的 MFAAVALONIA_VERSION 同步）；
+  #   留空则下载 latest，上游换绑新原生库时可能与本项目固定的 MaaFramework 版本不兼容。
+  MFAA_VERSION: "v2.16.2"
 
 on:
   push:
@@ -69,7 +70,9 @@ jobs:
 
   install:
     needs: meta
-    runs-on: ubuntu-latest
+    # Windows 目标必须在 Windows 构建机上打包：便携 Python 只能装 Windows wheel，
+    # .NET / VC++ 运行库组装也依赖 Windows 宿主；跨平台构出来的 win 包无法启动 Agent。
+    runs-on: ${{ matrix.os == 'win' && 'windows-latest' || 'ubuntu-latest' }}
     strategy:
       matrix:
         os: [win, macos, linux, android]
@@ -81,13 +84,24 @@ jobs:
         with:
           submodules: true
 
+      - name: Resolve MaaFramework version
+        id: maafw
+        shell: bash
+        run: |
+          version=$(grep -oP '^maafw==\K[0-9.]+' requirements.txt || true)
+          if [[ -z "$version" ]]; then
+            echo "requirements.txt 必须用 maafw==x.y.z 固定版本" >&2
+            exit 1
+          fi
+          echo "version=v$version" >> "$GITHUB_OUTPUT"
+
       - name: Download MaaFramework
         uses: robinraju/release-downloader@v1
         with:
           repository: MaaXYZ/MaaFramework
           fileName: "MAA-${{ matrix.os }}-${{ matrix.arch }}*"
-          latest: ${{ env.MAAFW_VERSION == '' }}
-          tag: ${{ env.MAAFW_VERSION }}
+          latest: false
+          tag: ${{ steps.maafw.outputs.version }}
           out-file-path: "deps"
           extract: true
 
@@ -124,7 +138,7 @@ jobs:
             if [ -d "MFA" ]; then
               echo "Copying MFA files to install directory..."
               mkdir -p install
-              rsync -av --ignore-existing MFA/ install/
+              cp -rn MFA/. install/
               echo "MFA files copied successfully."
             else
               echo "MFA directory not found, skipping copy."

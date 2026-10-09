@@ -17,6 +17,11 @@ from maa.resource import Resource
 from maa.tasker import Tasker
 from maa.toolkit import Toolkit
 
+# 便携版 Python(embeddable) 自带 ._pth 会跳过脚本目录，需显式补上以保证 game_input 可导入
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+if SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, SCRIPT_DIR)
+
 # 引入独立输入控制器与会话跟踪器
 try:
     from game_input import GameInputController, session_tracker
