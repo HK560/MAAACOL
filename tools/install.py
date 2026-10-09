@@ -188,11 +188,88 @@ def install_scripts():
             shutil.copy2(src, install_path)
 
 
+def install_gui_executable():
+    """将 GUI 主程序重命名为 MAAACOL (支持 Windows 与 Unix)"""
+    mfa_win = install_path / "MFAAvalonia.exe"
+    target_win = install_path / "MAAACOL.exe"
+    if mfa_win.exists():
+        shutil.copy2(mfa_win, target_win)
+        mfa_win.unlink(missing_ok=True)
+
+    mfa_unix = install_path / "MFAAvalonia"
+    target_unix = install_path / "MAAACOL"
+    if mfa_unix.exists():
+        shutil.copy2(mfa_unix, target_unix)
+        mfa_unix.unlink(missing_ok=True)
+
+    # 清理非标准/中文批处理脚本 (如 DependencySetup_依赖安装_win.bat)
+    for bf in install_path.glob("*.bat"):
+        try:
+            bf.name.encode("ascii")
+        except UnicodeEncodeError:
+            bf.unlink(missing_ok=True)
+
+
+def install_launcher_scripts():
+    """生成纯 ASCII 英文启动脚本"""
+    start_gui_bat = install_path / "start_gui.bat"
+    start_gui_content = """@echo off
+title MAAACOL - Graphical Interface (GUI)
+echo =======================================================
+echo          Starting MAAACOL Graphical Interface (GUI)
+echo =======================================================
+echo.
+echo [INFO] Launching MAAACOL.exe...
+start "" "%~dp0MAAACOL.exe"
+"""
+    with open(start_gui_bat, "w", encoding="ascii", newline="\r\n") as f:
+        f.write(start_gui_content)
+
+    run_bat = install_path / "run_tdm.bat"
+    run_bat_content = """@echo off
+title MAAACOL - Multiplayer Battle Runner
+echo =======================================================
+echo        Ace Combat Online - Multiplayer Battle Runner
+echo =======================================================
+echo.
+echo [Pre-requisite Instructions]
+echo 1. Manually enter Multiplayer mode in game.
+echo 2. Choose your desired game mode (any mode supported).
+echo 3. Return to Multiplayer Lobby (where your character can freely move).
+echo 4. Configure rounds and max duration below to start.
+echo [Recommendation] Strongly recommend setting game to Windowed 1280x720 resolution.
+echo.
+
+set ROUNDS=10
+set MINUTES=60
+
+set /p USER_ROUNDS="Target rounds [Default 10, 0 for unlimited]: "
+if not "%USER_ROUNDS%"=="" set ROUNDS=%USER_ROUNDS%
+
+set /p USER_MINUTES="Max minutes [Default 60, 0 for unlimited]: "
+if not "%USER_MINUTES%"=="" set MINUTES=%USER_MINUTES%
+
+echo.
+echo Starting: rounds=%ROUNDS%, max_minutes=%MINUTES%...
+echo Press Ctrl+C anytime to stop.
+echo.
+
+python run_tdm.py --rounds %ROUNDS% --minutes %MINUTES%
+
+echo.
+pause
+"""
+    with open(run_bat, "w", encoding="ascii", newline="\r\n") as f:
+        f.write(run_bat_content)
+
+
 if __name__ == "__main__":
     install_deps()
     install_resource()
     install_chores()
     install_agent()
     install_scripts()
+    install_gui_executable()
+    install_launcher_scripts()
 
     print(f"Install to {install_path} successfully.")

@@ -14,15 +14,20 @@ if exist "%~dp0.venv\Scripts\python.exe" (
 )
 
 :: Check if gui folder exists, otherwise attempt auto-setup from install/ or MFA/
-if not exist "%~dp0gui\MFAAvalonia.exe" (
-    if exist "%~dp0install\MFAAvalonia.exe" (
+if not exist "%~dp0gui\MAAACOL.exe" (
+    if exist "%~dp0gui\MFAAvalonia.exe" (
+        copy /y "%~dp0gui\MFAAvalonia.exe" "%~dp0gui\MAAACOL.exe" >nul
+    ) else if exist "%~dp0install\MAAACOL.exe" (
+        echo [INFO] Initializing gui folder from install folder...
+        python "%~dp0tools\build_local.py" --mode sync-gui
+    ) else if exist "%~dp0install\MFAAvalonia.exe" (
         echo [INFO] Initializing gui folder from install folder...
         python "%~dp0tools\build_local.py" --mode sync-gui
     ) else (
-        echo [ERROR] GUI environment not found (gui\MFAAvalonia.exe)!
+        echo [ERROR] GUI environment not found (gui\MAAACOL.exe)!
         echo.
         echo Please run 'build_local.bat' and select option [2] to download
-        echo and prepare MaaFramework and MFAAvalonia components.
+        echo and prepare MaaFramework and MAAACOL GUI components.
         echo.
         pause
         exit /b 1
@@ -33,6 +38,10 @@ if not exist "%~dp0gui\MFAAvalonia.exe" (
 echo [INFO] Syncing latest assets and scripts to GUI environment...
 python "%~dp0tools\build_local.py" --mode sync-gui >nul 2>&1
 
-echo [INFO] Launching MFAAvalonia.exe...
+echo [INFO] Launching MAAACOL.exe...
 cd /d "%~dp0gui"
-start "" "MFAAvalonia.exe"
+if exist "%~dp0gui\MAAACOL.exe" (
+    start "" "MAAACOL.exe"
+) else (
+    start "" "MFAAvalonia.exe"
+)

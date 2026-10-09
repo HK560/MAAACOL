@@ -85,7 +85,7 @@
 双击项目根目录下的启动脚本：
 
 ```text
-start_gui.bat
+start_gui.bat (或直接双击运行 MAAACOL.exe)
 ```
 
 > **提示**：启动脚本会自动检索虚拟环境 Python，若首次运行未检测到 GUI 运行库，脚本会智能提示一键下载与组装。

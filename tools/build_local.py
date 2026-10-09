@@ -157,8 +157,12 @@ echo =======================================================
 echo          Starting MAAACOL Graphical Interface (GUI)
 echo =======================================================
 echo.
-echo [INFO] Launching MFAAvalonia.exe...
-start "" "%~dp0MFAAvalonia.exe"
+echo [INFO] Launching MAAACOL.exe...
+if exist "%~dp0MAAACOL.exe" (
+    start "" "%~dp0MAAACOL.exe"
+) else (
+    start "" "%~dp0MFAAvalonia.exe"
+)
 """
     with open(gui_bat, "w", encoding="ascii", newline="\r\n") as f:
         f.write(gui_bat_content)
@@ -264,7 +268,19 @@ def copy_project_assets_and_scripts(target_dir: Path, version: str):
     # 6. 生成启动脚本
     create_launcher_scripts(target_dir)
 
-    # 7. 清理任何遗留/非标准批处理脚本或多余散落文件
+    # 7. 将 GUI 主执行程序重命名为 MAAACOL.exe / MAAACOL
+    mfa_win = target_dir / "MFAAvalonia.exe"
+    target_win = target_dir / "MAAACOL.exe"
+    if mfa_win.exists():
+        shutil.copy2(mfa_win, target_win)
+        mfa_win.unlink(missing_ok=True)
+    mfa_unix = target_dir / "MFAAvalonia"
+    target_unix = target_dir / "MAAACOL"
+    if mfa_unix.exists():
+        shutil.copy2(mfa_unix, target_unix)
+        mfa_unix.unlink(missing_ok=True)
+
+    # 8. 清理任何遗留/非标准批处理脚本或多余散落文件
     for bf in target_dir.glob("*.bat"):
         if bf.name not in ["start_gui.bat", "run_tdm.bat"]:
             bf.unlink(missing_ok=True)
@@ -276,8 +292,14 @@ def build_fast_local(version: str, os_name: str, arch: str, make_zip: bool = Tru
     """基于本地已有 gui/ 目录进行极速增量打包"""
     log_step(f"开始极速本地打包 [{version}] ({os_name}-{arch})")
 
-    if not GUI_DIR.exists() or not (GUI_DIR / "MFAAvalonia.exe").exists():
-        raise RuntimeError("未检测到本地 gui/ 目录或缺少 MFAAvalonia.exe！请先运行 Clean 构建或从 Release 准备 gui 环境。")
+    has_gui_exe = (
+        (GUI_DIR / "MAAACOL.exe").exists()
+        or (GUI_DIR / "MFAAvalonia.exe").exists()
+        or (GUI_DIR / "MAAACOL").exists()
+        or (GUI_DIR / "MFAAvalonia").exists()
+    )
+    if not GUI_DIR.exists() or not has_gui_exe:
+        raise RuntimeError("未检测到本地 gui/ 目录或缺少 GUI 可执行文件！请先运行 Clean 构建或从 Release 准备 gui 环境。")
 
     output_dir_name = f"MAAACOL-{version}-{os_name}-{arch}"
     target_dir = DIST_DIR / output_dir_name
